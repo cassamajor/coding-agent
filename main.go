@@ -140,6 +140,6 @@ func main() {
 
 	err = agent.Run(context.TODO())
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "Error: %+v\n", err)
 	}
 }
