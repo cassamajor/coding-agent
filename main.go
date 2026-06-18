@@ -44,13 +44,16 @@ func (a *Agent) runInference(ctx context.Context, conversation []anthropic.Messa
 // 4. Repeat
 func (a *Agent) Run(ctx context.Context) error {
 	fmt.Fprintln(a.Output, "Chat with Claude (use 'ctrl-c' to quit)")
-	fmt.Fprint(a.Output, USER)
 
 	conversation := []anthropic.MessageParam{}
 	scanner := bufio.NewScanner(a.UserInput)
 
-	for scanner.Scan() {
+	for {
 		fmt.Fprint(a.Output, USER)
+
+		if !scanner.Scan() {
+			break
+		}
 
 		userInput := scanner.Text()
 
