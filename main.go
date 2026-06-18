@@ -19,6 +19,7 @@ const (
 type Agent struct {
 	client    *anthropic.Client
 	UserInput io.Reader
+	Output    io.Writer
 }
 
 type option func(*Agent) error
@@ -42,14 +43,14 @@ func (a *Agent) runInference(ctx context.Context, conversation []anthropic.Messa
 // 3. Claude responds, which we also add to the conversation slice.
 // 4. Repeat
 func (a *Agent) Run(ctx context.Context) error {
-	fmt.Println("Chat with Claude (use 'ctrl-c' to quit)")
-	fmt.Print(USER)
+	fmt.Fprintln(a.Output, "Chat with Claude (use 'ctrl-c' to quit)")
+	fmt.Fprint(a.Output, USER)
 
 	conversation := []anthropic.MessageParam{}
 	scanner := bufio.NewScanner(a.UserInput)
 
 	for scanner.Scan() {
-		fmt.Print(USER)
+		fmt.Fprint(a.Output, USER)
 
 		userInput := scanner.Text()
 
@@ -73,7 +74,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		for _, content := range message.Content {
 			switch content.Type {
 			case "text":
-				fmt.Printf(CLAUDE, content.Text)
+				fmt.Fprintf(a.Output, CLAUDE, content.Text)
 			}
 		}
 	}
@@ -101,9 +102,20 @@ func WithInput(r io.Reader) option {
 	}
 }
 
+func WithOutput(w io.Writer) option {
+	return func(a *Agent) error {
+		if w == nil {
+			return errors.New("nil is not a valid writer")
+		}
+		a.Output = w
+		return nil
+	}
+}
+
 func NewAgent(opts ...option) (*Agent, error) {
 	a := &Agent{
 		UserInput: os.Stdin,
+		Output:    os.Stdout,
 	}
 
 	for _, opt := range opts {
@@ -125,6 +137,6 @@ func main() {
 
 	err = agent.Run(context.TODO())
 	if err != nil {
-		fmt.Printf("Error: %s\n", err.Error())
+		fmt.Fprintf(os.Stderr, "Error: %s\n", err.Error())
 	}
 }
