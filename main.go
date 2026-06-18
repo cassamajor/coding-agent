@@ -17,6 +17,7 @@ type Agent struct {
 
 type option func(*Agent) error
 
+// runInference sends messages to the Claude API and returns the response
 func (a *Agent) runInference(ctx context.Context, conversation []anthropic.MessageParam) (*anthropic.Message, error) {
 
 	messageParams := anthropic.MessageNewParams{
@@ -41,24 +42,32 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	for {
 		fmt.Print("\\u001b[94mYou\\u001b[0m: ")
+
+		// Collect user input
 		userInput, ok := a.getUserMessage()
 
+		// If there's no user input, there's no need to continue the loop.
 		if !ok {
 			break
 		}
 
+		// Store user input
 		userMessage := anthropic.NewUserMessage(
 			anthropic.NewTextBlock(userInput),
 		)
+
 		conversation = append(conversation, userMessage)
 
+		// Send user input to Anthropic API and receive a response
 		message, err := a.runInference(ctx, conversation)
 		if err != nil {
 			return err
 		}
 
+		// Store the agent response
 		conversation = append(conversation, message.ToParam())
 
+		// Share the agent response with the user
 		for _, content := range message.Content {
 			switch content.Type {
 			case "text":
