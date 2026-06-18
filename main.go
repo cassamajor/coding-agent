@@ -5,14 +5,20 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
 )
 
+const (
+	USER   string = "\\u001b[94mYou\\u001b[0m: "
+	CLAUDE string = "\\u001b[93mClaude\\u001b[0m: %s\n"
+)
+
 type Agent struct {
-	client         *anthropic.Client
-	getUserMessage func() (string, bool)
+	client    *anthropic.Client
+	UserInput io.Reader
 }
 
 type option func(*Agent) error
@@ -36,20 +42,16 @@ func (a *Agent) runInference(ctx context.Context, conversation []anthropic.Messa
 // 3. Claude responds, which we also add to the conversation slice.
 // 4. Repeat
 func (a *Agent) Run(ctx context.Context) error {
-	conversation := []anthropic.MessageParam{}
-
 	fmt.Println("Chat with Claude (use 'ctrl-c' to quit)")
+	fmt.Print(USER)
 
-	for {
-		fmt.Print("\\u001b[94mYou\\u001b[0m: ")
+	conversation := []anthropic.MessageParam{}
+	scanner := bufio.NewScanner(a.UserInput)
 
-		// Collect user input
-		userInput, ok := a.getUserMessage()
+	for scanner.Scan() {
+		fmt.Print(USER)
 
-		// If there's no user input, there's no need to continue the loop.
-		if !ok {
-			break
-		}
+		userInput := scanner.Text()
 
 		// Store user input
 		userMessage := anthropic.NewUserMessage(
@@ -71,7 +73,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		for _, content := range message.Content {
 			switch content.Type {
 			case "text":
-				fmt.Printf("\\u001b[93mClaude\\u001b[0m: %s\n", content.Text)
+				fmt.Printf(CLAUDE, content.Text)
 			}
 		}
 	}
@@ -89,18 +91,20 @@ func WithClient(c *anthropic.Client) option {
 	}
 }
 
-func WithGetUserMessage(c func() (string, bool)) option {
+func WithInput(r io.Reader) option {
 	return func(a *Agent) error {
-		if c == nil {
-			return errors.New("nil is not a valid function")
+		if r == nil {
+			return errors.New("nil is not a valid reader")
 		}
-		a.getUserMessage = c
+		a.UserInput = r
 		return nil
 	}
 }
 
 func NewAgent(opts ...option) (*Agent, error) {
-	a := &Agent{}
+	a := &Agent{
+		UserInput: os.Stdin,
+	}
 
 	for _, opt := range opts {
 		err := opt(a)
@@ -112,29 +116,11 @@ func NewAgent(opts ...option) (*Agent, error) {
 	return a, nil
 }
 
-func OldAgent(client *anthropic.Client, getUserMessage func() (string, bool)) *Agent {
-	return &Agent{
-		client:         client,
-		getUserMessage: getUserMessage,
-	}
-}
-
 func main() {
 	client := anthropic.NewClient()
 
-	scanner := bufio.NewScanner(os.Stdin)
-
-	// bool is treated as an indicator whether the operation completed successfully.
-	getUserMessage := func() (string, bool) {
-		if !scanner.Scan() {
-			return "", false
-		}
-		return scanner.Text(), true
-	}
-
 	agent, err := NewAgent(
 		WithClient(&client),
-		WithGetUserMessage(getUserMessage),
 	)
 
 	err = agent.Run(context.TODO())
