@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -20,17 +21,39 @@ type Agent struct {
 	client    *anthropic.Client
 	UserInput io.Reader
 	Output    io.Writer
+	Tools     []ToolDefinition
 }
 
 type option func(*Agent) error
 
+type ToolDefinition struct {
+	Name        string                         `json:"name"`
+	Description string                         `json:"description"`
+	InputSchema anthropic.ToolInputSchemaParam `json:"input_schema"`
+	Function    func(input json.RawMessage) (string, error)
+}
+
 // runInference sends messages to the Claude API and returns the response
 func (a *Agent) runInference(ctx context.Context, conversation []anthropic.MessageParam) (*anthropic.Message, error) {
+	anthropicTools := []anthropic.ToolUnionParam{}
+
+	for _, t := range a.Tools {
+		oftool := &anthropic.ToolParam{
+			Name:        t.Name,
+			Description: anthropic.String(t.Description),
+			InputSchema: t.InputSchema,
+		}
+
+		tool := anthropic.ToolUnionParam{OfTool: oftool}
+
+		anthropicTools = append(anthropicTools, tool)
+	}
 
 	messageParams := anthropic.MessageNewParams{
 		Model:     anthropic.ModelClaudeOpus4_8,
 		MaxTokens: int64(1042),
 		Messages:  conversation,
+		Tools:     anthropicTools,
 	}
 
 	message, err := a.client.Messages.New(ctx, messageParams)
@@ -115,8 +138,21 @@ func WithOutput(w io.Writer) option {
 	}
 }
 
+func WithTools(td []ToolDefinition) option {
+	return func(a *Agent) error {
+		if td == nil {
+			return errors.New("nil is not a valid tool definition")
+		}
+		a.Tools = td
+		return nil
+	}
+}
+
 func NewAgent(opts ...option) (*Agent, error) {
+	client := anthropic.NewClient()
+
 	a := &Agent{
+		client:    &client,
 		UserInput: os.Stdin,
 		Output:    os.Stdout,
 	}
@@ -132,11 +168,7 @@ func NewAgent(opts ...option) (*Agent, error) {
 }
 
 func main() {
-	client := anthropic.NewClient()
-
-	agent, err := NewAgent(
-		WithClient(&client),
-	)
+	agent, err := NewAgent()
 
 	err = agent.Run(context.TODO())
 	if err != nil {
