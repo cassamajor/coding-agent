@@ -12,8 +12,8 @@ import (
 )
 
 const (
-	USER   string = "\\u001b[94mYou\\u001b[0m: "
-	CLAUDE string = "\\u001b[93mClaude\\u001b[0m: %s\n"
+	USER   string = "\x1b[94mYou\x1b[0m: "        // Colorize the text "You"
+	CLAUDE string = "\x1b[93mClaude\x1b[0m: %s\n" // Colorize the text "Claude"
 )
 
 type Agent struct {
