@@ -10,12 +10,55 @@ import (
 	"os"
 
 	"github.com/anthropics/anthropic-sdk-go"
+	"github.com/invopop/jsonschema"
 )
 
 const (
 	USER   string = "\x1b[94mYou\x1b[0m: "        // Colorize the text "You"
 	CLAUDE string = "\x1b[93mClaude\x1b[0m: %s\n" // Colorize the text "Claude"
 )
+
+type ReadFileInput struct {
+	Path string `json:"path" jsonschema_description:"The relative path of a file in the working directory."`
+}
+
+func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
+	reflector := jsonschema.Reflector{
+		AllowAdditionalProperties: false,
+		DoNotReference:            true,
+	}
+
+	var v T
+
+	schema := reflector.Reflect(v)
+
+	return anthropic.ToolInputSchemaParam{
+		Properties: schema.Properties,
+	}
+}
+
+func ReadFile(input json.RawMessage) (string, error) {
+	readFileInput := ReadFileInput{}
+	err := json.Unmarshal(input, &readFileInput)
+	if err != nil {
+		panic(err)
+	}
+
+	content, err := os.ReadFile(readFileInput.Path)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}
+
+var ReadFileInputSchema = GenerateSchema[ReadFileInput]()
+
+var ReadFileDefinition = ToolDefinition{
+	Name:        "read_file",
+	Description: "Read the contents of a given relative file path. Use this when you want to see what is inside a file. Do not use this with directory names.",
+	InputSchema: ReadFileInputSchema,
+	Function:    ReadFile,
+}
 
 type Agent struct {
 	client    *anthropic.Client
@@ -171,7 +214,11 @@ func NewAgent(opts ...option) (*Agent, error) {
 }
 
 func main() {
-	agent, err := NewAgent()
+	tools := []ToolDefinition{ReadFileDefinition}
+
+	agent, err := NewAgent(
+		WithTools(tools),
+	)
 
 	err = agent.Run(context.TODO())
 	if err != nil {
