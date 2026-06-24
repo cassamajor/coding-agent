@@ -78,33 +78,33 @@ type ToolDefinition struct {
 	Function    func(input json.RawMessage) (string, error)
 }
 
-func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.ContentBlockParamUnion {
+func (a *Agent) executeTool(content *anthropic.ContentBlockUnion) anthropic.ContentBlockParamUnion {
 	var toolDef ToolDefinition
 	var found bool
 
 	for _, tool := range a.Tools {
-		if tool.Name == name {
+		if tool.Name == content.Name {
 			toolDef = tool
 			found = true
 			break
 		}
 	}
 	if !found {
-		return anthropic.NewToolResultBlock(id, "tool not found", true)
+		return anthropic.NewToolResultBlock(content.ID, "tool not found", true)
 	}
 
-	fmt.Fprintf(a.Output, TOOL, name, input)
+	fmt.Fprintf(a.Output, TOOL, content.Name, content.Input)
 
 	// Call the function assigned to the tool definition.
-	response, err := toolDef.Function(input)
+	response, err := toolDef.Function(content.Input)
 
 	// The tool function returned an error
 	if err != nil {
-		return anthropic.NewToolResultBlock(id, err.Error(), true)
+		return anthropic.NewToolResultBlock(content.ID, err.Error(), true)
 	}
 
 	// Return the content produced by the tool function
-	return anthropic.NewToolResultBlock(id, response, false)
+	return anthropic.NewToolResultBlock(content.ID, response, false)
 }
 
 // runInference sends messages to the Claude API and returns the response. It also specifies which tools are available to the agent.
@@ -188,7 +188,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			case "text":
 				fmt.Fprintf(a.Output, CLAUDE, content.Text)
 			case "tool_use":
-				result := a.executeTool(content.ID, content.Name, content.Input)
+				result := a.executeTool(&content)
 				toolResults = append(toolResults, result)
 			}
 		}
