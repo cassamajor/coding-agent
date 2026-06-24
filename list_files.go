@@ -2,8 +2,8 @@ package main
 
 import (
 	"encoding/json"
+	"io/fs"
 	"os"
-	"path/filepath"
 )
 
 type ListFilesInput struct {
@@ -24,24 +24,14 @@ func ListFiles(input json.RawMessage) (string, error) {
 		dir = listFilesInput.Path
 	}
 
-	var files []string
-	err = filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+	var paths []string
+	fs.WalkDir(os.DirFS(dir), dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
 
-		relPath, err := filepath.Rel(dir, path)
-		if err != nil {
-			return err
-		}
+		paths = append(paths, p)
 
-		if relPath != "." {
-			if info.IsDir() {
-				files = append(files, relPath+"/")
-			} else {
-				files = append(files, relPath)
-			}
-		}
 		return nil
 	})
 
@@ -49,7 +39,7 @@ func ListFiles(input json.RawMessage) (string, error) {
 		return "", err
 	}
 
-	result, err := json.Marshal(files)
+	result, err := json.Marshal(paths)
 	if err != nil {
 		return "", err
 	}
