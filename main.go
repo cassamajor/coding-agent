@@ -263,7 +263,7 @@ func NewAgent(opts ...option) (*Agent, error) {
 }
 
 func main() {
-	tools := []ToolDefinition{ReadFileDefinition}
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition}
 
 	agent, err := NewAgent(
 		WithTools(tools),
