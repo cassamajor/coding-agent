@@ -25,7 +25,7 @@ func ListFiles(input json.RawMessage) (string, error) {
 	}
 
 	var paths []string
-	fs.WalkDir(os.DirFS(dir), dir, func(p string, d fs.DirEntry, err error) error {
+	err = fs.WalkDir(os.DirFS(dir), dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
