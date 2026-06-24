@@ -14,8 +14,9 @@ import (
 )
 
 const (
-	USER   string = "\x1b[94mYou\x1b[0m: "        // Colorize the text "You"
-	CLAUDE string = "\x1b[93mClaude\x1b[0m: %s\n" // Colorize the text "Claude"
+	USER   string = "\x1b[94mYou\x1b[0m: "          // Colorize the text "You"
+	CLAUDE string = "\x1b[93mClaude\x1b[0m: %s\n"   // Colorize the text "Claude"
+	TOOL   string = "\x1b[92mtool\x1b[0m: %s(%s)\n" // Colorize the text "tool"
 )
 
 type ReadFileInput struct {
@@ -69,11 +70,41 @@ type Agent struct {
 
 type option func(*Agent) error
 
+// Description should follow best practices: a brief explanation, specifiy the circumstances the tool should be used, and the circumstances that it should not be used.
 type ToolDefinition struct {
 	Name        string                         `json:"name"`
 	Description string                         `json:"description"`
 	InputSchema anthropic.ToolInputSchemaParam `json:"input_schema"`
 	Function    func(input json.RawMessage) (string, error)
+}
+
+func (a *Agent) executeTool(id, name string, input json.RawMessage) anthropic.ContentBlockParamUnion {
+	var toolDef ToolDefinition
+	var found bool
+
+	for _, tool := range a.Tools {
+		if tool.Name == name {
+			toolDef = tool
+			found = true
+			break
+		}
+	}
+	if !found {
+		return anthropic.NewToolResultBlock(id, "tool not found", true)
+	}
+
+	fmt.Fprintf(a.Output, TOOL, name, input)
+
+	// Call the function assigned to the tool definition.
+	response, err := toolDef.Function(input)
+
+	// The tool function returned an error
+	if err != nil {
+		return anthropic.NewToolResultBlock(id, err.Error(), true)
+	}
+
+	// Return the content produced by the tool function
+	return anthropic.NewToolResultBlock(id, response, false)
 }
 
 // runInference sends messages to the Claude API and returns the response. It also specifies which tools are available to the agent.
@@ -104,10 +135,13 @@ func (a *Agent) runInference(ctx context.Context, conversation []anthropic.Messa
 }
 
 // Run let's us talk to Claude in a loop.
-// 1. Take user input, and add it to the conversation slice.
-// 2. Send the conversation to Claude.
-// 3. Claude responds, which we also add to the conversation slice.
-// 4. Repeat
+//  1. Take user input, and add it to the conversation slice.
+//  2. Send the conversation to Claude.
+//  3. Claude responds, which we also add to the conversation slice.
+//  4. Repeat
+//  5. Tool usage example: Claude's response + the tool call are returned in a single message. Then, readUserInput is set to false,
+//     and the tool result is sent to Claude, and Claude responds. readUserInput is then set to true, which then allows us to continue
+//     the conversation.
 func (a *Agent) Run(ctx context.Context) error {
 	fmt.Fprintln(a.Output, "Chat with Claude (use 'ctrl-c' to quit)")
 
@@ -116,22 +150,26 @@ func (a *Agent) Run(ctx context.Context) error {
 	// Collect user input
 	scanner := bufio.NewScanner(a.UserInput)
 
+	readUserInput := true
 	for {
-		fmt.Fprint(a.Output, USER)
+		if readUserInput {
 
-		// If there's no user input, there's no need to continue the loop.
-		if !scanner.Scan() {
-			break
+			fmt.Fprint(a.Output, USER)
+
+			// If there's no user input, there's no need to continue the loop.
+			if !scanner.Scan() {
+				break
+			}
+
+			userInput := scanner.Text()
+
+			// Store user input
+			userMessage := anthropic.NewUserMessage(
+				anthropic.NewTextBlock(userInput),
+			)
+
+			conversation = append(conversation, userMessage)
 		}
-
-		userInput := scanner.Text()
-
-		// Store user input
-		userMessage := anthropic.NewUserMessage(
-			anthropic.NewTextBlock(userInput),
-		)
-
-		conversation = append(conversation, userMessage)
 
 		// Send user input to Anthropic API and receive a response
 		message, err := a.runInference(ctx, conversation)
@@ -142,13 +180,24 @@ func (a *Agent) Run(ctx context.Context) error {
 		// Store the agent response
 		conversation = append(conversation, message.ToParam())
 
+		toolResults := []anthropic.ContentBlockParamUnion{}
+
 		// Share the agent response with the user
 		for _, content := range message.Content {
 			switch content.Type {
 			case "text":
 				fmt.Fprintf(a.Output, CLAUDE, content.Text)
+			case "tool_use":
+				result := a.executeTool(content.ID, content.Name, content.Input)
+				toolResults = append(toolResults, result)
 			}
 		}
+		if len(toolResults) == 0 {
+			readUserInput = true
+			continue
+		}
+		readUserInput = false
+		conversation = append(conversation, anthropic.NewUserMessage(toolResults...))
 	}
 
 	return nil
