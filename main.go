@@ -193,7 +193,7 @@ func GenerateSchema[T any]() anthropic.ToolInputSchemaParam {
 }
 
 func main() {
-	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition}
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition}
 
 	agent, err := NewAgent(
 		WithTools(tools),
